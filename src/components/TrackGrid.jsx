@@ -96,7 +96,7 @@ export default function TrackGrid({
                 style={{
                   gridColumn: FIRST_CELL_COL + i,
                   gridRow: j + 2,
-                  ...(i === FIELD_COLS ? { borderLeft: '3px solid #000' } : {}),
+                  ...(i === FIELD_COLS ? { borderLeft: '2px solid #9ca3af' } : {}),
                 }}
                 onClick={() => onGridCellClick(key)}
                 onDragOver={(e) => {
