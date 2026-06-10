@@ -3,11 +3,12 @@ import TrackGrid from './components/TrackGrid.jsx'
 import TilePalette from './components/TilePalette.jsx'
 import Tile from './components/Tile.jsx'
 import Header from './components/Header.jsx'
+import StatusBar from './components/StatusBar.jsx'
 import BoardMap from './components/BoardMap.jsx'
 import StrategySequence from './components/StrategySequence.jsx'
-import Card from './components/ui/Card.jsx'
 import Button from './components/ui/Button.jsx'
-import Badge from './components/ui/Badge.jsx'
+import ToggleGroup from './components/ui/ToggleGroup.jsx'
+import ToolbarSection from './components/ui/ToolbarSection.jsx'
 import {
   ROWS,
   TOTAL_COLS,
@@ -94,6 +95,11 @@ export default function App() {
     }
     return st
   }, [handSet, used, tail])
+  // S 板 = 該回合的第 5 片,一回合只能放一次:本回合是否已放過 S
+  const sUsedThisRound = useMemo(
+    () => Object.values(placed).some((p) => p.id === 'S' && p.batch === batch),
+    [placed, batch]
+  )
 
   // 界內檢查(壓板合法,所以不檢查重疊)
   function canPlace(originKey, id, r) {
@@ -104,20 +110,30 @@ export default function App() {
     return true
   }
 
-  // 放下一片。1-9:消耗本輪名額,4 片用完同樣 4 片進下一輪(循環);
-  // S 板不佔名額,但會進 seq(才能在下方顯示「X進Y出」)。
+  // 放下一片。一回合 = 抽到的 4 片數字 + 1 片 S(含 S 的組別);S 是第 5 片、一回合只能放一次。
+  // 4 片數字都放、且(若該組有 S)S 也放了,才算完成本回合,進下一輪(同樣 4 片循環)。
   function placeTrack(key, type, r) {
     const isS = type === 'S'
+    const includeS = GROUPS[group].includeS
+    if (isS && sUsedThisRound) return // S 一回合只能放一次
     if (!isS && !available.has(type)) return
     if (!canPlace(key, type, r)) return
     const uid = 't' + uidRef.current++
     setPlaced((prev) => ({ ...prev, [uid]: { origin: key, id: type, rot: r, batch } }))
     setSeq((prev) => [...prev, { uid, id: type }])
-    if (isS) return // S 不佔抽牌名額、不推進輪數
+    if (isS) {
+      // 若 4 片數字已放滿,放下這片 S 即完成本回合 → 進下一輪
+      if (used.size >= 4) {
+        setUsed(new Set())
+        setBatch((b) => b + 1)
+      }
+      return
+    }
     const next = new Set(used)
     next.add(type)
-    if (next.size >= 4) {
-      setUsed(new Set()) // 同樣 4 片進下一輪
+    // 4 片數字放滿;含 S 組別還要等 S 也放了才換輪
+    if (next.size >= 4 && (!includeS || sUsedThisRound)) {
+      setUsed(new Set())
       setBatch((b) => b + 1)
     } else {
       setUsed(next)
@@ -475,230 +491,218 @@ export default function App() {
 
   return (
     <div className="app">
-      <Header
-        group={group}
-        groupRule={groupRule}
-        mode={mode}
-        aggressive={aggressive}
-        ready={hand.length === 4}
-      />
+      <Header ready={hand.length === 4} onAutoPlan={autoTrack} onClear={clearField} />
 
-      <section className="control-panel">
-        {/* 1. 遊戲設定 */}
-        <Card title="遊戲設定" className="cp-card">
-          <div className="seg seg-3" role="tablist">
-            {['國小', '國中', '高中'].map((g) => (
-              <button
-                key={g}
-                type="button"
-                className={`seg-btn ${group === g ? 'on' : ''}`}
-                onClick={() => applyGroup(g)}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-          <Button variant="outline" active={showInfo} onClick={() => setShowInfo((v) => !v)}>
-            {showInfo ? '隱藏資訊欄' : '顯示資訊欄'}
-          </Button>
-          <p className="cp-hint">{groupRule}</p>
-        </Card>
+      <main className="workspace">
+        <StatusBar group={group} groupRule={groupRule} mode={mode} ready={hand.length === 4} />
 
-        {/* 2. 抽籤模式 */}
-        <Card title="抽籤模式" className="cp-card">
-          <div className="seg seg-2" role="tablist">
-            <button
-              type="button"
-              className={`seg-btn ${mode === 'draw' ? 'on' : ''}`}
-              onClick={() => applyMode('draw')}
-            >
-              抽籤
-            </button>
-            <button
-              type="button"
-              className={`seg-btn ${mode === 'manual' ? 'on' : ''}`}
-              onClick={() => applyMode('manual')}
-            >
-              手動輸入
-            </button>
-          </div>
-          <div className="cp-actions">
-            {mode === 'draw' && (
-              <Button variant="primary" onClick={reDraw}>
-                抽籤
-              </Button>
+        <section className="console">
+          {/* 遊戲設定 */}
+          <ToolbarSection title="遊戲設定" className="col-settings">
+            <ToggleGroup
+              options={[
+                { value: '國小', label: '國小' },
+                { value: '國中', label: '國中' },
+                { value: '高中', label: '高中' },
+              ]}
+              value={group}
+              onChange={applyGroup}
+            />
+            <Button variant="outline" size="sm" active={showInfo} onClick={() => setShowInfo((v) => !v)}>
+              {showInfo ? '隱藏資訊欄' : '顯示資訊欄'}
+            </Button>
+          </ToolbarSection>
+
+          {/* 抽籤模式(主欄) */}
+          <ToolbarSection title="抽籤模式" className="col-draw">
+            <div className="draw-head">
+              <ToggleGroup
+                options={[
+                  { value: 'draw', label: '抽籤' },
+                  { value: 'manual', label: '手動輸入' },
+                ]}
+                value={mode}
+                onChange={applyMode}
+              />
+              <div className="draw-acts">
+                {mode === 'draw' && (
+                  <Button variant="primary" size="sm" onClick={reDraw}>
+                    重新抽籤
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={reBonus}>
+                  重抽加分點
+                </Button>
+              </div>
+            </div>
+
+            {mode === 'draw' ? (
+              <div className="draw-data">
+                <div className="data-row">
+                  <span className="data-label">抽到板子</span>
+                  <span className="toks">
+                    {hand.map((t) => (
+                      <span key={t} className={`tok ${tileStatus[t] !== 'ok' ? 'is-used' : ''}`}>
+                        {t}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="data-meta">
+                    本輪 {used.size + (sUsedThisRound ? 1 : 0)}/{GROUPS[group].includeS ? 5 : 4}
+                  </span>
+                </div>
+                <div className="data-row">
+                  <span className="data-label">加分點</span>
+                  <span className="toks">
+                    {bonus.map((b) => (
+                      <span key={b.col} className="tok tok-bonus">
+                        {b.row}
+                        {b.col}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="draw-data">
+                <div className="data-row">
+                  <span className="data-label">選板子</span>
+                  <span className="pick-row">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => {
+                      const on = hand.includes(n)
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          className={`pick ${on ? 'on' : ''}`}
+                          disabled={!on && hand.length >= 4}
+                          onClick={() => toggleHandTile(n)}
+                        >
+                          {n}
+                        </button>
+                      )
+                    })}
+                  </span>
+                  <span className="data-meta">{hand.length}/4</span>
+                </div>
+                <div className="data-row">
+                  <span className="data-label">加分點</span>
+                  <span className="bonus-pickers">
+                    {bonus.map((b) => (
+                      <label key={b.col} className="bonus-picker">
+                        <span>欄 {b.col}</span>
+                        <select value={b.row} onChange={(e) => setBonusRow(b.col, e.target.value)}>
+                          {BONUS_ROW_CHOICES.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </span>
+                </div>
+              </div>
             )}
-            <Button variant="outline" onClick={reBonus}>
-              重新加分點
-            </Button>
-          </div>
+          </ToolbarSection>
 
-          {mode === 'draw' ? (
-            <div className="cp-results">
-              <div className="result-row">
-                <span className="result-label">抽到板子</span>
-                <span className="chips">
-                  {hand.map((t) => (
-                    <Badge key={t} tone={tileStatus[t] !== 'ok' ? 'muted' : 'dark'}>
-                      {t}
-                    </Badge>
-                  ))}
-                </span>
-                <Badge tone="info">本輪已放 {used.size}/4</Badge>
-              </div>
-              <div className="result-row">
-                <span className="result-label">抽到加分點</span>
-                <span className="chips">
-                  {bonus.map((b) => (
-                    <Badge key={b.col} tone="warning">
-                      {b.row}
-                      {b.col}
-                    </Badge>
-                  ))}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="cp-results">
-              <div className="result-row">
-                <span className="result-label">選板子</span>
-                <span className="pick-row">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => {
-                    const on = hand.includes(n)
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`pick ${on ? 'on' : ''}`}
-                        disabled={!on && hand.length >= 4}
-                        onClick={() => toggleHandTile(n)}
-                      >
-                        {n}
-                      </button>
-                    )
-                  })}
-                </span>
-                <Badge tone="info">已選 {hand.length}/4</Badge>
-              </div>
-              <div className="result-row">
-                <span className="result-label">選加分點</span>
-                <span className="bonus-pickers">
-                  {bonus.map((b) => (
-                    <label key={b.col} className="bonus-picker">
-                      <span>第 {b.col} 欄</span>
-                      <select value={b.row} onChange={(e) => setBonusRow(b.col, e.target.value)}>
-                        {BONUS_ROW_CHOICES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                </span>
-              </div>
-            </div>
-          )}
-        </Card>
-
-        {/* 3. 地圖工具 */}
-        <Card title="地圖工具" className="cp-card">
-          <div className="cp-actions">
-            <Button variant="outline" onClick={() => setRot((v) => (v + 90) % 360)}>
-              旋轉筆刷 {rot}°
-            </Button>
-            <Button
-              variant="warning"
-              active={aggressive}
-              onClick={() => setAggressive((v) => !v)}
-              title="緩衝由 2 片改成 1 片:板子能更快重複使用,規劃通常組數更少(較激進)"
-            >
-              激進模式：{aggressive ? '開' : '關'}
-            </Button>
-            <Button variant="primary" disabled={hand.length !== 4} onClick={autoTrack}>
-              自動規劃
-            </Button>
-            <Button variant="danger" onClick={clearField}>
-              清空場地
-            </Button>
-          </div>
-          {planMsg && <p className="plan-msg">{planMsg}</p>}
-          {mode === 'manual' && selTile && (
-            <div className="brush-preview" title="放置方向預覽">
-              <div
-                className="tile-rot"
-                style={
-                  selected === 'start'
-                    ? { width: '1.4rem', height: '2.8rem', transform: 'rotate(90deg)' }
-                    : { width: '1.6rem', height: `calc(1.6rem * ${selTile.h})`, transform: `rotate(${rot}deg)` }
-                }
+          {/* 地圖工具與狀態 */}
+          <ToolbarSection title="地圖工具" className="col-tools">
+            <div className="tool-acts">
+              <Button variant="outline" size="sm" onClick={() => setRot((v) => (v + 90) % 360)}>
+                旋轉筆刷 {rot}°
+              </Button>
+              <Button
+                variant="warning"
+                size="sm"
+                active={aggressive}
+                onClick={() => setAggressive((v) => !v)}
+                title="緩衝由 2 片改成 1 片:板子能更快重複使用,規劃通常組數更少(較激進)"
               >
-                <Tile tile={selTile} />
-              </div>
+                激進模式 {aggressive ? '開' : '關'}
+              </Button>
             </div>
-          )}
-        </Card>
-      </section>
+            {mode === 'manual' && selTile && (
+              <div className="brush-preview" title="放置方向預覽">
+                <div
+                  className="tile-rot"
+                  style={
+                    selected === 'start'
+                      ? { width: '1.4rem', height: '2.8rem', transform: 'rotate(90deg)' }
+                      : { width: '1.6rem', height: `calc(1.6rem * ${selTile.h})`, transform: `rotate(${rot}deg)` }
+                  }
+                >
+                  <Tile tile={selTile} />
+                </div>
+              </div>
+            )}
+            {planMsg && <p className="plan-msg">{planMsg}</p>}
+          </ToolbarSection>
+        </section>
 
-      {showInfo && (
-        <Card className="meta-card" bodyClass="meta-body">
-          <label className="meta-field">
-            <span>校名</span>
-            <input value={meta.school} onChange={(e) => updateMeta('school', e.target.value)} />
-          </label>
-          <label className="meta-field">
-            <span>隊名</span>
-            <input value={meta.team} onChange={(e) => updateMeta('team', e.target.value)} />
-          </label>
-          <label className="meta-field">
-            <span>選手簽名</span>
-            <input value={meta.player} onChange={(e) => updateMeta('player', e.target.value)} />
-          </label>
-        </Card>
-      )}
+        {showInfo && (
+          <div className="meta-strip">
+            <span className="meta-strip-label">參賽資料</span>
+            <label className="meta-field">
+              <span>校名</span>
+              <input value={meta.school} onChange={(e) => updateMeta('school', e.target.value)} />
+            </label>
+            <label className="meta-field">
+              <span>隊名</span>
+              <input value={meta.team} onChange={(e) => updateMeta('team', e.target.value)} />
+            </label>
+            <label className="meta-field">
+              <span>選手簽名</span>
+              <input value={meta.player} onChange={(e) => updateMeta('player', e.target.value)} />
+            </label>
+          </div>
+        )}
 
-      <BoardMap>
-        <TrackGrid
-          placed={placed}
-          startPos={startPos}
-          bonus={bonus}
-          groupSeams={reveal === null ? groupSeams : []}
-          anim={anim}
-          drag={drag}
-          hoverCell={hoverCell}
-          onGridCellClick={handleGridCellClick}
-          onGridDrop={handleGridDrop}
-          onGridDragOver={onGridDragOver}
-          onGridLeave={() => setHoverCell(null)}
-          onTileClick={handleTileClick}
-          onTileContext={removeTrack}
-          onTileDragStart={onTileDragStart}
-          onTileDragEnd={onTileDragEnd}
-          onStartCellClick={handleStartCellClick}
-          onStartDrop={handleStartDrop}
-          onStartClick={handleStartClick}
-          onStartContext={() => setStartPos(null)}
-        />
-      </BoardMap>
+        <BoardMap>
+          <TrackGrid
+            placed={placed}
+            startPos={startPos}
+            bonus={bonus}
+            groupSeams={reveal === null ? groupSeams : []}
+            anim={anim}
+            drag={drag}
+            hoverCell={hoverCell}
+            onGridCellClick={handleGridCellClick}
+            onGridDrop={handleGridDrop}
+            onGridDragOver={onGridDragOver}
+            onGridLeave={() => setHoverCell(null)}
+            onTileClick={handleTileClick}
+            onTileContext={removeTrack}
+            onTileDragStart={onTileDragStart}
+            onTileDragEnd={onTileDragEnd}
+            onStartCellClick={handleStartCellClick}
+            onStartDrop={handleStartDrop}
+            onStartClick={handleStartClick}
+            onStartContext={() => setStartPos(null)}
+          />
+        </BoardMap>
 
-      <StrategySequence rounds={flowChips} />
+        <StrategySequence rounds={flowChips} />
 
-      <Card
-        title="板子工具盤"
-        subtitle="拖曳或點選板子放到地圖；左鍵旋轉、右鍵移除、拖出地圖移除"
-        className="palette-card"
-        bodyClass="palette-body"
-      >
-        <TilePalette
-          selected={selected}
-          onSelect={setSelected}
-          tileStatus={tileStatus}
-          brushRot={rot}
-          showS={GROUPS[group].includeS}
-          onDragTile={onDragTile}
-          onDragTileEnd={clearDrag}
-        />
-      </Card>
+        <section className="tray">
+          <div className="section-head">
+            <h2 className="section-title">板子工具盤</h2>
+            <span className="section-hint">
+              拖曳或點選板子放到地圖；左鍵旋轉、右鍵移除、拖出地圖移除
+            </span>
+          </div>
+          <TilePalette
+            selected={selected}
+            onSelect={setSelected}
+            tileStatus={tileStatus}
+            brushRot={rot}
+            showS={GROUPS[group].includeS}
+            sUsed={sUsedThisRound}
+            onDragTile={onDragTile}
+            onDragTileEnd={clearDrag}
+          />
+        </section>
+      </main>
     </div>
   )
 }

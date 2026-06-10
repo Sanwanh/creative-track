@@ -7,11 +7,11 @@ const glyphHeight = (h) => `calc(var(--gu) * ${h})`
 // 下方工具列:起點板 + 1-9 + S板 + 清除。
 // tileStatus[id]:'ok'(可用)/'used'(本輪已放)/'buffer'(緩衝中)/'out'(不在手牌)。
 // 起點板與 S 板不參加抽籤,永遠可用。
-export default function TilePalette({ selected, onSelect, tileStatus, brushRot, showS = true, onDragTile, onDragTileEnd }) {
+export default function TilePalette({ selected, onSelect, tileStatus, brushRot, showS = true, sUsed = false, onDragTile, onDragTileEnd }) {
   const renderItem = (tile) => {
     const id = tile.id
-    const exempt = id === 'start' || id === 'S'
-    const status = exempt ? 'ok' : tileStatus[id]
+    // 起點板永遠可用;S 板每回合限放一次(放過就標「已用」);數字片看 tileStatus
+    const status = id === 'start' ? 'ok' : id === 'S' ? (sUsed ? 'used' : 'ok') : tileStatus[id]
     const usable = status === 'ok'
     const isSel = selected === id
     return (
@@ -43,9 +43,15 @@ export default function TilePalette({ selected, onSelect, tileStatus, brushRot, 
 
   return (
     <div className="palette">
-      {renderItem(START_PLATE)}
-      {TILES.map(renderItem)}
-      {showS && renderItem(S_TILE)}
+      <div className="tray-group">{renderItem(START_PLATE)}</div>
+      <span className="tray-div" aria-hidden="true" />
+      <div className="tray-group">{TILES.map(renderItem)}</div>
+      {showS && (
+        <>
+          <span className="tray-div" aria-hidden="true" />
+          <div className="tray-group">{renderItem(S_TILE)}</div>
+        </>
+      )}
     </div>
   )
 }
