@@ -1,0 +1,888 @@
+:root {
+  /* 場地格子:桌機塞滿不捲動(上限 34px);手機留 20px 下限以保可點擊,
+     太窄就只讓「場地」內部橫向捲動(不會撐爆整頁)。 */
+  --cell: clamp(20px, (100vw - 100px) / 41, 34px);
+  --line: #1a1a1a;
+  --red: #d11;
+  --green: #0a9a0a;
+
+  /* ---- Apple Liquid Glass 設計 token(玻璃材質,尺寸一律用 rem 隨根字級縮放)---- */
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-bg-soft: rgba(255, 255, 255, 0.26);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-blur: blur(1rem) saturate(180%);
+  /* 上緣高光(specular)+ 柔和景深陰影 */
+  --glass-sheen: inset 0 0.06rem 0 rgba(255, 255, 255, 0.75),
+    inset 0 -0.06rem 0.12rem rgba(20, 30, 50, 0.06);
+  --glass-shadow: 0 0.4rem 1rem rgba(28, 38, 58, 0.13);
+  --radius: 0.7rem;
+  --radius-pill: 999rem;
+  --gu: 2.4rem; /* 調色盤板子縮圖單位(隨根字級自適應) */
+  /* 主要動作(綠)、激進(橘)用的色調玻璃 */
+  --glass-green: rgba(16, 154, 16, 0.82);
+  --glass-orange: rgba(217, 72, 15, 0.84);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 流體根字級 + 底色畫在 html(根畫布,保證整個視窗都被覆蓋,不會露出深色邊) */
+html {
+  font-size: clamp(12px, 0.55vw + 8.5px, 17px);
+  min-height: 100%;
+  background-color: #eef2f8; /* 純色保底:任何情況都不露出瀏覽器深色畫布 */
+  background-image:
+    radial-gradient(120% 80% at 12% 0%, rgba(120, 170, 255, 0.18), transparent 60%),
+    radial-gradient(120% 90% at 100% 0%, rgba(120, 230, 190, 0.16), transparent 55%),
+    linear-gradient(180deg, #eef2f8 0%, #f6f8fb 40%, #f3f5f9 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  color: #111;
+}
+
+.page {
+  padding: clamp(0.75rem, 1.5vw, 1.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* ---------- 頂部資料欄(玻璃面板)---------- */
+.meta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  font-size: 1.05rem;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+}
+
+.meta-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.meta-bar input {
+  border: none;
+  border-bottom: 1px solid rgba(40, 50, 70, 0.45);
+  background: transparent;
+  font-size: 0.95rem;
+  padding: 0.15rem 0.4rem;
+  min-width: 9rem;
+}
+
+.meta-bar input:focus {
+  outline: none;
+  border-bottom-color: var(--red);
+}
+
+/* ---------- 抽籤列(玻璃工具列)---------- */
+.draw-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+}
+/* 第一排:動作按鈕 */
+.draw-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+/* 抽到的結果:板子一排、加分點一排 */
+.draw-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.rlabel {
+  display: inline-block;
+  min-width: 9.5rem;
+  font-weight: 700;
+  color: #3a4250;
+}
+
+/* 左右切換開關:抽籤 / 手動輸入(玻璃膠囊 + 懸浮效果)*/
+.mode-switch {
+  display: inline-flex;
+  padding: 0.2rem;
+  gap: 0.15rem;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  /* 浮起的景深陰影,看起來懸浮在頁面上 */
+  box-shadow: var(--glass-sheen), 0 0.5rem 1.1rem rgba(28, 38, 58, 0.18);
+  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.22s ease;
+}
+.mode-switch:hover {
+  transform: translateY(-0.15rem);
+  box-shadow: var(--glass-sheen), 0 0.85rem 1.6rem rgba(28, 38, 58, 0.26);
+}
+.mode-switch button {
+  padding: 0.35rem 1.2rem;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #4a5160;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+.mode-switch button:hover:not(.on) {
+  background: rgba(255, 255, 255, 0.55);
+  color: #2a3140;
+}
+.mode-switch button:active {
+  transform: scale(0.95);
+}
+.mode-switch button.on {
+  background: var(--glass-green);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+  box-shadow: var(--glass-sheen), 0 0.15rem 0.5rem rgba(16, 154, 16, 0.35);
+}
+
+/* 組別選擇 + 資訊欄開關 */
+.top-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.group-sel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+.group-btn {
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+  color: #2a3140;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.group-btn:hover {
+  background: var(--glass-bg-soft);
+}
+.group-btn:active {
+  transform: scale(0.96);
+}
+.group-btn.sel {
+  background: var(--glass-green);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+  box-shadow: var(--glass-sheen), 0 0.15rem 0.5rem rgba(16, 154, 16, 0.35);
+}
+.group-rule {
+  font-size: 0.8rem;
+  color: #6a7280;
+}
+
+/* 手動輸入:1-9 挑 4 片 + 加分點選列(玻璃)*/
+.manual-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.manual-bonus {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2a3140;
+}
+.manual-bonus select {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen);
+  color: #2a3140;
+  cursor: pointer;
+}
+.manual-pick {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+  color: #2a3140;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.manual-pick:hover:not(:disabled) {
+  background: var(--glass-bg-soft);
+}
+.manual-pick:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.manual-pick.on {
+  background: var(--glass-green);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+  box-shadow: var(--glass-sheen), 0 0.15rem 0.5rem rgba(16, 154, 16, 0.35);
+}
+.manual-pick:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 板子排列動畫:由起點往終點逐片彈入 */
+@keyframes tileAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.tile-overlay.appear {
+  animation: tileAppear 0.28s cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+.draw-btn {
+  padding: 8px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+}
+
+.draw-btn:hover {
+  filter: brightness(0.92);
+}
+
+.draw-result {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.95rem;
+}
+
+.hand-chip {
+  display: inline-block;
+  min-width: 1.4rem;
+  text-align: center;
+  margin: 0 0.18rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-sheen);
+  color: #2a3140;
+  font-weight: 700;
+}
+
+.hand-chip.used {
+  background: rgba(255, 255, 255, 0.18);
+  color: #99a;
+  text-decoration: line-through;
+}
+
+.batch-progress {
+  margin-left: 0.6rem;
+  font-size: 0.8rem;
+  color: #5a6270;
+}
+
+.used-badge {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #888;
+  border-radius: 5px;
+  padding: 0 4px;
+}
+
+.used-badge.buffer {
+  background: #f2a21e;
+}
+
+.hint {
+  font-size: 13px;
+  color: #555;
+  margin: -6px 0 0;
+}
+
+.brush-preview {
+  width: 5.2rem;
+  height: 5.2rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rot-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--red);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+/* ---------- 軌道格 ---------- */
+.grid-scroll {
+  /* 桌機:--cell 自適應剛好塞滿 → 不出現捲軸;手機(格子達下限)→ 只讓場地內部橫捲 */
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 24px calc(var(--cell) * 2) repeat(39, var(--cell)) 24px;
+  grid-auto-rows: var(--cell);
+  width: max-content;
+  border: 2px solid var(--line);
+  background: #fff;
+}
+
+.colnum {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--cell) * 0.78);
+  color: var(--red);
+  font-weight: 700;
+  font-size: calc(var(--cell) * 0.42);
+  border-bottom: 2px solid var(--line);
+}
+
+.rowlabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+  font-weight: 700;
+  font-size: calc(var(--cell) * 0.4);
+}
+
+.margin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.margin.end {
+  color: var(--red);
+  border-left: 2px solid var(--line);
+  background: #eaf4e4;
+}
+
+/* 統一 Liquid Glass 按鈕;主要動作(自動規劃/套用)= 綠色色調玻璃 */
+.auto-btn,
+.rotate-btn,
+.reset-btn,
+.bonus-btn {
+  padding: 0.45rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+  color: #2a3140;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auto-btn:hover,
+.rotate-btn:hover,
+.reset-btn:hover,
+.bonus-btn:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.auto-btn:active,
+.rotate-btn:active,
+.reset-btn:active,
+.bonus-btn:active {
+  transform: scale(0.96);
+}
+
+.auto-btn.primary {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: var(--glass-green);
+  color: #fff;
+  box-shadow: var(--glass-sheen), 0 0.2rem 0.6rem rgba(16, 154, 16, 0.4);
+}
+
+/* 激進模式開啟:橘紅色調玻璃(警示性) */
+.rotate-btn.aggressive-on {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: var(--glass-orange);
+  color: #fff;
+  box-shadow: var(--glass-sheen), 0 0.2rem 0.6rem rgba(217, 72, 15, 0.4);
+}
+
+.auto-btn.primary:hover {
+  background: rgba(16, 154, 16, 0.92);
+}
+
+.auto-btn:disabled,
+.auto-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.plan-msg {
+  font-size: 14px;
+  color: #555;
+}
+
+/* 場地下方:已用板子記錄 */
+.batch-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+/* 連續使用序列:箭頭一路往後指,輪與輪之間細分隔線(緊湊排列) */
+.log-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+}
+
+.log-round {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 5px;
+  margin-right: 5px;
+  border-right: 2px solid #e2e2e2;
+}
+
+.log-round:last-child {
+  border-right: none;
+}
+
+.log-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.log-arrow {
+  color: #bbb;
+  margin: 0 2px;
+  font-size: 12px;
+}
+
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.25rem;
+  border-radius: 0.3rem;
+  background: #222;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.log-chip.straight {
+  background: #fff;
+  color: #d11;
+  border: 2px solid #d11;
+  border-radius: 50%;
+}
+
+/* S 板:顯示「X進Y出」,橘色長條晶片 */
+.log-chip.sboard {
+  min-width: auto;
+  padding: 0 0.5rem;
+  background: #f2a21e;
+  color: #fff;
+  border-radius: 0.4rem;
+  letter-spacing: 1px;
+}
+
+/* 起點側放置格(A-I,只收起點板) */
+.start-cell {
+  border: none;
+  border-right: 2px solid var(--line); /* 起點線 */
+  background: #eaf4e4;
+  padding: 0;
+  cursor: pointer;
+}
+
+.start-cell:hover {
+  background: rgba(10, 154, 10, 0.22);
+}
+
+/* 起點 直書標籤,疊在放置格上但不擋拖放 */
+.margin-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell) * 0.62);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.margin-label.start {
+  color: var(--green);
+}
+
+.margin-label.end {
+  color: var(--red);
+}
+
+/* 終點區格子(板子可伸入;最後一片必須超過終點線)— 淡紅底對應紅色「終點」 */
+/* 無內部格線;終點線由 ci=36 格的 inline borderLeft 畫出 */
+.cell.end-cell {
+  background: #fdecea;
+  border: none;
+}
+
+.cell.end-cell:hover {
+  background: #f9d9d5;
+}
+
+/* 每組結束的紅槓:壓在板子上層,標出「這裡一組了」 */
+.group-seam {
+  position: relative;
+  z-index: 450; /* 在板子之上、加分點(500)之下 */
+  pointer-events: none;
+}
+
+.group-seam::after {
+  content: '';
+  position: absolute;
+  background: #ff1717;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+}
+
+/* 紅槓畫在出口邊:R/L = 直槓;T/B = 橫槓 */
+.group-seam.side-R::after {
+  top: -2px;
+  bottom: -2px;
+  right: -4px;
+  width: 7px;
+}
+
+.group-seam.side-L::after {
+  top: -2px;
+  bottom: -2px;
+  left: -4px;
+  width: 7px;
+}
+
+.group-seam.side-B::after {
+  left: -2px;
+  right: -2px;
+  bottom: -4px;
+  height: 7px;
+}
+
+.group-seam.side-T::after {
+  left: -2px;
+  right: -2px;
+  top: -4px;
+  height: 7px;
+}
+
+/* 加分點標記:橙色環圈,壓在板子上層可透視 */
+.bonus-dot {
+  position: relative;
+  z-index: 500; /* 永遠在所有板子(含壓板)之上 */
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bonus-dot span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid #f2a21e;
+  background: rgba(242, 162, 30, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.bonus-info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.bonus-chip {
+  display: inline-block;
+  min-width: 2rem;
+  text-align: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-sheen);
+  color: #2a3140;
+  font-weight: 700;
+}
+
+.start-overlay {
+  z-index: 4;
+}
+
+.cell {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cell:hover {
+  background: #eef6ff;
+}
+
+/* 放在格上的軌道條(覆蓋多格;依旋轉置中) */
+.tile-overlay {
+  position: relative;
+  z-index: 2;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.tile-overlay:active {
+  cursor: grabbing;
+}
+
+/* 落點預覽(吸附目標):半透明板子 + 虛線框;不擋住底下格子的拖放事件 */
+.tile-ghost {
+  pointer-events: none;
+  opacity: 0.55;
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+.tile-ghost.bad {
+  opacity: 1;
+  background: rgba(221, 17, 17, 0.18);
+  box-shadow: inset 0 0 0 2px var(--red);
+}
+
+/* 直向尺寸的內層,用 transform 旋轉到目標方向;尺寸跟著 --cell 自適應(--th = 板子格數) */
+.tile-rot {
+  width: var(--cell);
+  height: calc(var(--cell) * var(--th, 1));
+  transform-origin: center;
+}
+
+.tile-svg {
+  display: block;
+}
+
+/* ---------- 工具列(玻璃板子盤)---------- */
+.palette-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.palette {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-sheen), var(--glass-shadow);
+}
+
+.palette-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-sheen);
+  border-radius: var(--radius);
+  padding: 0.4rem;
+  cursor: grab;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+
+.palette-item:hover {
+  background: rgba(255, 255, 255, 0.55);
+  transform: translateY(-0.12rem);
+}
+
+.palette-item.sel {
+  border-color: rgba(221, 17, 17, 0.7);
+  box-shadow: var(--glass-sheen), 0 0 0 0.12rem rgba(221, 17, 17, 0.35);
+}
+
+.palette-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.palette-item.disabled:hover {
+  background: var(--glass-bg-soft);
+  transform: none;
+}
+
+.palette-glyph {
+  position: relative;
+  width: var(--gu);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.palette-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* ====== 手機優化(≤ 640px):緊湊排版、換行、放大可點區域 ====== */
+@media (max-width: 640px) {
+  .page {
+    padding: 0.6rem;
+    gap: 0.7rem;
+  }
+  .meta-bar,
+  .draw-bar,
+  .palette {
+    padding: 0.6rem 0.7rem;
+  }
+  .meta-bar {
+    gap: 0.8rem;
+  }
+
+  /* 抽到的板子 / 加分點:標籤獨佔一行,晶片換到下一行,避免被擠爆 */
+  .draw-result,
+  .bonus-info {
+    flex-wrap: wrap;
+  }
+  .rlabel {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-bottom: 0.15rem;
+  }
+
+  /* 調色盤板子換行排列 */
+  .palette {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.45rem;
+  }
+
+  /* 放大可點區域(觸控友善) */
+  .auto-btn,
+  .rotate-btn,
+  .reset-btn,
+  .bonus-btn,
+  .group-btn,
+  .mode-switch button {
+    padding: 0.55rem 1rem;
+    font-size: 0.95rem;
+  }
+  .manual-pick {
+    width: 2.6rem;
+    height: 2.6rem;
+    font-size: 1.1rem;
+  }
+  .manual-bonus select {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.95rem;
+  }
+  .top-controls,
+  .draw-row {
+    gap: 0.5rem;
+  }
+}
+

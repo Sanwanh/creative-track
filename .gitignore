@@ -1,0 +1,19 @@
+# 相依套件
+node_modules/
+
+# 建置輸出(由 GitHub Actions 重新建置,不入庫)
+dist/
+
+# 測試/除錯產物
+.playwright-cli/
+.playwright-mcp/
+output/
+*.log
+
+# 開發暫存的截圖與草稿頁
+/*.png
+/preview.html
+/planner-result.html
+
+# 系統檔
+.DS_Store
