@@ -3,7 +3,7 @@ export default function StatusBar({ group, groupRule, mode, ready }) {
   const items = [
     { label: '組別', value: `${group}組` },
     { label: '規則', value: groupRule },
-    { label: '模式', value: mode === 'manual' ? '手動輸入' : '抽籤' },
+    { label: '模式', value: mode === 'manual' ? '手動輸入' : mode === 'compare' ? '比較三組' : '抽籤' },
   ]
   return (
     <div className="statusbar">

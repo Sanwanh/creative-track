@@ -212,7 +212,7 @@ function startRowOrder(bonus) {
 // weights:軟規則微調(回轉/倒退/垂直),只在等長解中挑最直,不影響組數。
 export function plan({
   baseSeed = 1, bonus = [], hand = null, timeLimitMs = 3000, weights = {},
-  includeS = true, sLast = false, buffer = 2,
+  includeS = true, sLast = false, buffer = 2, cap,
 } = {}) {
   if (!hand) hand = drawHand(mulberry32(baseSeed ^ 0x9e3779b9)) // CLI/相容:沒給就抽一手
   const floor = minRounds(hand, includeS)
@@ -222,7 +222,7 @@ export function plan({
   let bestTiles = Infinity
   for (const startRow of startRowOrder(bonus)) {
     if (Date.now() - t0 > timeLimitMs) break
-    const seqPlaced = solveAStar(startRow, bonus, hand, { w: weights, includeS, sLast, buffer })
+    const seqPlaced = solveAStar(startRow, bonus, hand, { w: weights, includeS, sLast, buffer, cap })
     if (!seqPlaced || seqPlaced.length >= bestTiles) continue
     bestTiles = seqPlaced.length
     const groups = []

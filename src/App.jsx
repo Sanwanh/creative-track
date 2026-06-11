@@ -55,12 +55,13 @@ const S_PORT_LABELS = ['R', 'M', 'L']
 
 export default function App() {
   // 固定手牌循環:hand=抽籤的 4 片(整場不變);used=本輪已放;batch=輪數
-  const [hand, setHand] = useState(() => drawFour())
+  // 預設「空手牌」:抽籤/比較三組進場都不自動抽,等使用者按按鈕才有板子。
+  const [hand, setHand] = useState([])
   const [used, setUsed] = useState(() => new Set())
   const [batch, setBatch] = useState(0)
   const [seq, setSeq] = useState([]) // 全場放置順序 [{uid, id}](含 S 板)
   const [group, setGroup] = useState(DEFAULT_GROUP) // 國小 / 國中 / 高中
-  const [bonus, setBonus] = useState(() => drawBonus(GROUPS[DEFAULT_GROUP].cols))
+  const [bonus, setBonus] = useState([]) // 抽籤預設也空白,按「重新抽籤」才一起抽板子+加分點
   const [showInfo, setShowInfo] = useState(false) // 顯示/隱藏 校名隊名選手簽名(預設關閉)
   const [reveal, setReveal] = useState(null) // 動畫:null=全部顯示;數字=顯示到第 N 步
   const animTimer = useRef(null)
@@ -77,6 +78,11 @@ export default function App() {
   const [drag, setDrag] = useState(null) // 拖曳中的板子 {id, rot, uid?}(供落點預覽)
   const [hoverCell, setHoverCell] = useState(null) // 拖曳時游標所在格(吸附目標)
   const [aggressive, setAggressive] = useState(false) // 激進模式:緩衝 2 片→1 片
+  // 比較三組:[{hand, bonus, rounds, tiles, result, best}]
+  //   rounds: undefined=尚未規劃 / 'incomplete'=未滿4片 / 'pending'=規劃中 / null=無解 / 數字=組數
+  const [compareList, setCompareList] = useState([])
+  const [comparing, setComparing] = useState(false)
+  const [comparePicked, setComparePicked] = useState(null) // 目前在地圖上預覽的那一組 index
 
   const handSet = useMemo(() => new Set(hand), [hand])
   // 緩衝:最近放下的板子暫時不能再用(正常 2 片;激進模式 1 片)
@@ -221,6 +227,42 @@ export default function App() {
     setStartPos((p) => (p ? { ...p, rot: p.rot === 90 ? 270 : 90 } : p))
   }
 
+  // 把規劃結果(plan() 的輸出)套到場地;baseBatch=起始輪數,並播放排列動畫。
+  function applyPlanResult(result, baseBatch, includeS) {
+    const nextPlaced = {}
+    const newSeq = []
+    result.groups.forEach((g, gi) => {
+      g.placed.forEach((p) => {
+        const minR = Math.min(...p.cells.map((c) => c[0]))
+        const minC = Math.min(...p.cells.map((c) => c[1]))
+        const uid = 't' + uidRef.current++
+        nextPlaced[uid] = {
+          origin: cellKey(ROWS[minR], minC + 1),
+          id: p.tileId,
+          rot: p.rot,
+          batch: baseBatch + gi,
+        }
+        newSeq.push({ uid, id: p.tileId })
+      })
+    })
+    const last = result.groups[result.groups.length - 1]
+    const lastNums = last.placed.map((p) => p.tileId).filter((t) => t !== 'S')
+    const roundSize = result.hand.length + (includeS ? 1 : 0)
+    const partial = last.placed.length < roundSize
+
+    setPlaced(nextPlaced)
+    setStartPos({ row: ROWS[result.startRow], rot: 90 })
+    setSeq(newSeq)
+    if (partial) {
+      setBatch(baseBatch + result.groups.length - 1)
+      setUsed(new Set(lastNums))
+    } else {
+      setBatch(baseBatch + result.groups.length)
+      setUsed(new Set())
+    }
+    startAnim(newSeq.length)
+  }
+
   // ---- 🎲 自動規劃:用「目前抽到的 4 片」從頭規劃到尾(組數越少越好;可壓板走回頭路)----
   function autoTrack() {
     if (hand.length !== 4) {
@@ -244,39 +286,8 @@ export default function App() {
         setPlanMsg(`✗ 這手 ${hand.join('・')} 排不到終點(可能無解),請 🎰 重抽或再試一次`)
         return
       }
-      const nextPlaced = {}
-      const newSeq = []
-      result.groups.forEach((g, gi) => {
-        g.placed.forEach((p) => {
-          const minR = Math.min(...p.cells.map((c) => c[0]))
-          const minC = Math.min(...p.cells.map((c) => c[1]))
-          const uid = 't' + uidRef.current++
-          nextPlaced[uid] = {
-            origin: cellKey(ROWS[minR], minC + 1),
-            id: p.tileId,
-            rot: p.rot,
-            batch: batch + gi,
-          }
-          newSeq.push({ uid, id: p.tileId })
-        })
-      })
-      const last = result.groups[result.groups.length - 1]
-      const lastNums = last.placed.map((p) => p.tileId).filter((t) => t !== 'S') // 手牌名額只算數字片
-      const roundSize = result.hand.length + (cfg.includeS ? 1 : 0) // 國小=4、國中/高中=5
-      const partial = last.placed.length < roundSize
-
-      setPlaced(nextPlaced)
-      setStartPos({ row: ROWS[result.startRow], rot: 90 })
-      setSeq(newSeq)
-      if (partial) {
-        setBatch(batch + result.groups.length - 1)
-        setUsed(new Set(lastNums))
-      } else {
-        setBatch(batch + result.groups.length)
-        setUsed(new Set())
-      }
+      applyPlanResult(result, batch, cfg.includeS)
       setPlanMsg('') // 成功不顯示訊息
-      startAnim(newSeq.length) // 規劃完播放:由起點至終點逐片排列
     }, 30)
   }
 
@@ -316,10 +327,16 @@ export default function App() {
     setStartPos(null)
     setUsed(new Set())
     setSeq([])
-    setHand(mode === 'manual' ? [] : drawFour())
-    setBonus(drawBonus(GROUPS[g].cols))
+    // 換組別 = 重置:抽籤一律空白(等按重新抽籤);手動手牌空白、加分點給預設值可編輯。
+    setHand([])
+    setBonus(mode === 'manual' ? drawBonus(GROUPS[g].cols) : [])
     setBatch((b) => b + 1)
     setPlanMsg('')
+    // 比較三組:換組別代表加分點欄位變了,重新給 3 張空板子的可編輯卡。
+    if (mode === 'compare') {
+      setCompareList(makeCompareConfigs(g))
+      setComparePicked(null)
+    }
   }
 
   // 🎰 抽籤 = 4 片 + 加分點「一起」重抽(開新局,清空場地與記錄)
@@ -335,10 +352,16 @@ export default function App() {
     setPlanMsg('')
   }
 
-  // 左右切換「抽籤 / 手動輸入」版本(都會清空場地開新局)
+  // 左右切換「抽籤 / 手動輸入 / 比較三組」(都會清空場地開新局)
   function applyMode(m) {
     if (m === mode) return
     stopAnim()
+    // 從「比較三組」採用某組後再切到抽籤:保留那組已載入的場地,不要清空重抽,直接接著做細部規劃。
+    if (mode === 'compare' && comparePicked != null && m === 'draw') {
+      setMode('draw')
+      setComparePicked(null)
+      return
+    }
     setMode(m)
     setPlaced({})
     setStartPos(null)
@@ -346,9 +369,21 @@ export default function App() {
     setSeq([])
     setBatch((b) => b + 1)
     setPlanMsg('')
-    // 手動版本:把手牌全部清空,讓使用者自己挑;抽籤版本:隨機抽 4 片
-    setHand(m === 'manual' ? [] : drawFour())
-    if (m === 'draw') setBonus(drawBonus(GROUPS[group].cols))
+    setComparePicked(null)
+    // 抽籤:進場一律空白(板子+加分點都不抽),等按「重新抽籤」;
+    // 手動:手牌空白讓使用者挑,加分點先給預設值可編輯;
+    // 比較三組:放 3 張空板子的可編輯卡,等按「隨機抽 3 組」或手動填。
+    if (m === 'draw') {
+      setHand([])
+      setBonus([])
+    } else if (m === 'manual') {
+      setHand([])
+      setBonus(drawBonus(GROUPS[group].cols))
+    } else if (m === 'compare') {
+      setHand([])
+      setBonus([]) // 主地圖清空,等採用某組才畫該組路線
+      setCompareList(makeCompareConfigs())
+    }
   }
   // 手動模式:點 1-9 即時增刪手牌(最多 4 片,改動就清空場地重來)
   function toggleHandTile(n) {
@@ -380,6 +415,128 @@ export default function App() {
     setSeq([])
     setBatch((b) => b + 1)
     setPlanMsg('')
+  }
+
+  // 🆚 比較三組:抽/手動輸入 3 組題目(各含 4 片板 + 加分點),各自自動規劃,推薦組數最少(最好排)的一組。
+  // 產生 3 組初始題目。withTiles=false(預設):空板子的可編輯卡(進場用,等使用者填或按抽);
+  // withTiles=true:隨機抽滿 4 片(按「隨機抽 3 組」時用)。加分點一律先給值,讓下拉選單可編輯。
+  function makeCompareConfigs(g = group, withTiles = false) {
+    const cfg = GROUPS[g]
+    return [0, 1, 2].map(() => ({
+      hand: withTiles ? drawFour() : [],
+      bonus: drawBonus(cfg.cols),
+      rounds: undefined, // 尚未規劃
+      tiles: null,
+      result: null,
+      best: false,
+    }))
+  }
+  // 規劃一組 configs(手牌滿 4 片才算);逐一更新結果,最後標出推薦(組數最少;同組數比片數少)。
+  function planCompare(configs) {
+    stopAnim()
+    setComparePicked(null)
+    const cfg = GROUPS[group]
+    setComparing(true)
+    setCompareList(
+      configs.map((c) => ({
+        ...c,
+        rounds: c.hand.length === 4 ? 'pending' : 'incomplete',
+        tiles: null,
+        result: null,
+        best: false,
+      }))
+    )
+    const queue = configs.map((c, i) => ({ c, i })).filter(({ c }) => c.hand.length === 4)
+    let k = 0
+    const step = () => {
+      if (k >= queue.length) {
+        setComparing(false)
+        setCompareList((prev) => {
+          let bestIdx = -1
+          let bestKey = Infinity
+          prev.forEach((x, j) => {
+            if (typeof x.rounds === 'number') {
+              const key = x.rounds * 1000 + (x.tiles || 0)
+              if (key < bestKey) {
+                bestKey = key
+                bestIdx = j
+              }
+            }
+          })
+          return prev.map((x, j) => ({ ...x, best: j === bestIdx }))
+        })
+        return
+      }
+      const { c, i } = queue[k]
+      const bonusCells = c.bonus.map((b) => ({ r: ROWS.indexOf(b.row), c: b.col - 1 }))
+      const result = plan({
+        baseSeed: Math.floor(Math.random() * 1e9),
+        bonus: bonusCells,
+        hand: c.hand,
+        timeLimitMs: 2500,
+        cap: 90000, // 比較用:節點上限略低於正式規劃,兼顧「找得到解」與「無解組快速收斂」
+        includeS: cfg.includeS,
+        sLast: cfg.sLast,
+        buffer: aggressive ? 1 : 2,
+      })
+      const rounds = result ? result.groups.length : null
+      const tiles = result ? result.groups.reduce((s, g) => s + g.placed.length, 0) : null
+      setCompareList((prev) => prev.map((x, j) => (j === i ? { ...x, rounds, tiles, result } : x)))
+      k++
+      setTimeout(step, 30)
+    }
+    setTimeout(step, 30)
+  }
+  // 隨機抽 3 組並規劃(這裡才真的抽板子)
+  function drawAndCompare() {
+    planCompare(makeCompareConfigs(group, true))
+  }
+  // 規劃目前(可能手動編輯過)的 3 組
+  function compareAll() {
+    planCompare(compareList.length ? compareList : makeCompareConfigs())
+  }
+  // 手動編輯某一組的板子(挑 4 片);改動就清掉該組結果,需重新規劃。
+  function toggleCompareTile(i, n) {
+    setCompareList((prev) =>
+      prev.map((c, j) => {
+        if (j !== i) return c
+        const hand = c.hand.includes(n)
+          ? c.hand.filter((x) => x !== n)
+          : c.hand.length < 4
+            ? [...c.hand, n].sort((a, b) => a - b)
+            : c.hand
+        return { ...c, hand, rounds: undefined, tiles: null, result: null, best: false }
+      })
+    )
+  }
+  // 手動編輯某一組某一欄的加分點列
+  function setCompareBonusRow(i, col, row) {
+    setCompareList((prev) =>
+      prev.map((c, j) =>
+        j === i
+          ? {
+              ...c,
+              bonus: c.bonus.map((b) => (b.col === col ? { ...b, row } : b)),
+              rounds: undefined,
+              tiles: null,
+              result: null,
+              best: false,
+            }
+          : c
+      )
+    )
+  }
+  // 採用/預覽某一組:載入手牌+加分點,把規劃好的路線「動畫」畫在地圖上,並留在比較模式方便逐組判斷。
+  function adoptConfig(i) {
+    const c = compareList[i]
+    if (!c || c.result == null) return
+    stopAnim()
+    const cfg = GROUPS[group]
+    setHand([...c.hand])
+    setBonus(c.bonus.map((b) => ({ ...b })))
+    setComparePicked(i)
+    setPlanMsg('')
+    applyPlanResult(c.result, 0, cfg.includeS)
   }
 
   useEffect(() => {
@@ -520,20 +677,23 @@ export default function App() {
                 options={[
                   { value: 'draw', label: '抽籤' },
                   { value: 'manual', label: '手動輸入' },
+                  { value: 'compare', label: '比較三組' },
                 ]}
                 value={mode}
                 onChange={applyMode}
               />
-              <div className="draw-acts">
-                {mode === 'draw' && (
-                  <Button variant="primary" size="sm" onClick={reDraw}>
-                    重新抽籤
+              {mode !== 'compare' && (
+                <div className="draw-acts">
+                  {mode === 'draw' && (
+                    <Button variant="primary" size="sm" onClick={reDraw}>
+                      重新抽籤
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={reBonus}>
+                    重抽加分點
                   </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={reBonus}>
-                  重抽加分點
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
 
             {mode === 'draw' ? (
@@ -563,7 +723,7 @@ export default function App() {
                   </span>
                 </div>
               </div>
-            ) : (
+            ) : mode === 'manual' ? (
               <div className="draw-data">
                 <div className="data-row">
                   <span className="data-label">選板子</span>
@@ -602,6 +762,101 @@ export default function App() {
                     ))}
                   </span>
                 </div>
+              </div>
+            ) : (
+              <div className="compare">
+                <div className="compare-bar">
+                  <Button variant="primary" size="sm" disabled={comparing} onClick={drawAndCompare}>
+                    {comparing ? '規劃中…' : '隨機抽 3 組'}
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={comparing} onClick={compareAll}>
+                    規劃比較
+                  </Button>
+                  <span className="compare-hint">
+                    可隨機抽,或自己挑每組的板子與加分點;按「規劃比較」推薦最好排(組數最少)的一組
+                  </span>
+                </div>
+                {compareList.length > 0 && (
+                  <div className="compare-grid">
+                    {compareList.map((c, i) => (
+                      <div
+                        key={i}
+                        className={`cmp-card ${c.best ? 'is-best' : ''} ${comparePicked === i ? 'is-picked' : ''} ${c.rounds === null ? 'is-fail' : ''}`}
+                      >
+                        <div className="cmp-head">
+                          <span className="cmp-name">第 {i + 1} 組</span>
+                          {c.best && <span className="cmp-badge">推薦</span>}
+                          {comparePicked === i && <span className="cmp-badge is-view">預覽中</span>}
+                        </div>
+                        <div className="cmp-field">
+                          <span className="cmp-k">板子</span>
+                          <span className="cmp-picks">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => {
+                              const on = c.hand.includes(n)
+                              return (
+                                <button
+                                  key={n}
+                                  type="button"
+                                  className={`cpick ${on ? 'on' : ''}`}
+                                  disabled={!on && c.hand.length >= 4}
+                                  onClick={() => toggleCompareTile(i, n)}
+                                >
+                                  {n}
+                                </button>
+                              )
+                            })}
+                          </span>
+                        </div>
+                        <div className="cmp-field">
+                          <span className="cmp-k">加分點</span>
+                          <span className="cmp-bonus">
+                            {c.bonus.map((b) => (
+                              <label key={b.col} className="cmp-bsel">
+                                <span>{b.col}</span>
+                                <select
+                                  value={b.row}
+                                  onChange={(e) => setCompareBonusRow(i, b.col, e.target.value)}
+                                >
+                                  {BONUS_ROW_CHOICES.map((r) => (
+                                    <option key={r} value={r}>
+                                      {r}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ))}
+                          </span>
+                        </div>
+                        <div
+                          className={`cmp-result ${c.best ? 'is-best' : ''} ${c.rounds === null ? 'is-fail' : ''}`}
+                        >
+                          {c.rounds === 'pending'
+                            ? '規劃中…'
+                            : c.rounds === 'incomplete'
+                              ? '請選滿 4 片'
+                              : c.rounds === undefined
+                                ? '尚未規劃'
+                                : c.rounds === null
+                                  ? '✗ 排不到終點'
+                                  : `${c.rounds} 組 · ${c.tiles} 片`}
+                        </div>
+                        <Button
+                          variant={comparePicked === i ? 'primary' : 'outline'}
+                          size="sm"
+                          disabled={c.result == null}
+                          onClick={() => adoptConfig(i)}
+                        >
+                          {comparePicked === i ? '看路線中' : '採用此組'}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {comparePicked != null && (
+                  <p className="compare-foot">
+                    已在下方地圖播放「第 {comparePicked + 1} 組」路線。決定後切到「抽籤」即可接著做細部規劃。
+                  </p>
+                )}
               </div>
             )}
           </ToolbarSection>
