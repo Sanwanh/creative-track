@@ -141,19 +141,28 @@ function solveAStar(startRow, bonus, hand, opts = {}) {
       if (buffer >= 2 && tid === cur.pp) continue // 正常模式:再往前一片也要緩衝
       if (sLast && i === sIdx && used !== allButS) continue // 高中組:S 必須是該輪最後一片
       for (const sol of placementsFor(tid, cur.r, cur.c, cur.side, EMPTY_OCC, { allowOverlap: true })) {
-        // 加分點覆蓋只跟佔格有關,先算一次
-        let bm = cur.bm
-        for (let b = 0; b < bonus.length; b++) {
-          if (bm & (1 << b)) continue
-          for (const [cr, cc] of sol.placed.cells) {
-            if (cr === bonus[b].r && cc === bonus[b].c) { bm |= 1 << b; break }
-          }
-        }
+        const inCell = sol.placed.ports[sol.inPortIndex].cell
+        const inIdx = sol.placed.cells.findIndex(([cr, cc]) => cr === inCell[0] && cc === inCell[1])
         // S 板有 3 個口:線從進口進,可從「另外兩口」擇一出(一般板只有 1 個出口)
         for (let oi = 0; oi < sol.placed.ports.length; oi++) {
           if (oi === sol.inPortIndex) continue
           const out = sol.placed.ports[oi]
           const ex = out.exit
+          // 加分點:必須是「線實際經過」的格(進口→出口之間的那段線),不只是板子壓到。
+          // 一條線占 1 格寬,進/出口落在板子兩端格之間;S 板沒被線經過的那一臂即使壓到也不算。
+          let bm = cur.bm
+          if (bm !== allBonus) {
+            const outIdx = sol.placed.cells.findIndex(([cr, cc]) => cr === out.cell[0] && cc === out.cell[1])
+            const lo = Math.min(inIdx, outIdx)
+            const hi = Math.max(inIdx, outIdx)
+            for (let b = 0; b < bonus.length; b++) {
+              if (bm & (1 << b)) continue
+              for (let kk = lo; kk <= hi; kk++) {
+                const [cr, cc] = sol.placed.cells[kk]
+                if (cr === bonus[b].r && cc === bonus[b].c) { bm |= 1 << b; break }
+              }
+            }
+          }
           let tie = 0
           if (out.side === cur.side) tie += wU // 進出同側 = 回轉一圈
           if (out.side === 'L') tie += wB // 出口朝左 = 倒退
@@ -308,7 +317,8 @@ export function verify(result, bonus = [], opts = {}) {
     }
   }
   const all = result.groups.flatMap((g) => g.placed)
-  const occ = new Set()
+  const occ = new Set() // 佔格(界內/壓板檢查用)
+  const passed = new Set() // 線實際經過的格(加分點以此為準)
   let need = { cell: [result.startRow, 0], side: 'L' }
   for (let i = 0; i < all.length; i++) {
     const p = all[i]
@@ -332,10 +342,14 @@ export function verify(result, bonus = [], opts = {}) {
       )
       if (!other) return { ok: false, why: `第${i + 1}塊(${p.tileId})之後接不上` }
     }
+    // 這塊「線經過」的格 = 進口格→出口格之間那段(S 板沒走的那一臂不算)
+    const ix = p.cells.findIndex(([r, c]) => r === p.ports[pin].cell[0] && c === p.ports[pin].cell[1])
+    const ox = p.cells.findIndex(([r, c]) => r === other.cell[0] && c === other.cell[1])
+    for (let kk = Math.min(ix, ox); kk <= Math.max(ix, ox); kk++) passed.add(k(p.cells[kk][0], p.cells[kk][1]))
     if (i === all.length - 1) {
       if (other.cell[1] < COLS_N) return { ok: false, why: '最後一塊沒有超過終點線' }
       for (const b of bonus) {
-        if (!occ.has(k(b.r, b.c))) return { ok: false, why: `加分點 ${ROW_LABEL[b.r]}${b.c + 1} 沒被經過` }
+        if (!passed.has(k(b.r, b.c))) return { ok: false, why: `加分點 ${ROW_LABEL[b.r]}${b.c + 1} 沒被線經過` }
       }
       return { ok: true, tiles: all.length }
     }
