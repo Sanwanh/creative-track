@@ -134,6 +134,12 @@ function solveAStar(startRow, bonus, hand, opts = {}) {
 
     const used = cur.used === full ? 0 : cur.used // 該輪用完 → 開新一輪
     const ppKey = buffer >= 2 ? cur.prev : 0 // 激進模式不把「前前片」納入狀態
+    // 不壓板:整條路線都不能重疊(走自我不相交路徑)。收集目前為止所有已放板子的佔格。
+    // 注意:緩衝(prev/pp)是「同號板子隔幾片才能再用」,與這裡的不重疊是兩回事。
+    const occCells = new Set()
+    for (let n = cur; n && n.placed; n = n.parent) {
+      for (const [r, c] of n.placed.cells) occCells.add(r + ',' + c)
+    }
     for (let i = 0; i < slots.length; i++) {
       if (used & (1 << i)) continue
       const tid = slots[i]
@@ -141,6 +147,12 @@ function solveAStar(startRow, bonus, hand, opts = {}) {
       if (buffer >= 2 && tid === cur.pp) continue // 正常模式:再往前一片也要緩衝
       if (sLast && i === sIdx && used !== allButS) continue // 高中組:S 必須是該輪最後一片
       for (const sol of placementsFor(tid, cur.r, cur.c, cur.side, EMPTY_OCC, { allowOverlap: true })) {
+        // 不壓板:這片若壓到任何已放的板子就跳過
+        let clash = false
+        for (const [cr, cc] of sol.placed.cells) {
+          if (occCells.has(cr + ',' + cc)) { clash = true; break }
+        }
+        if (clash) continue
         const inCell = sol.placed.ports[sol.inPortIndex].cell
         const inIdx = sol.placed.cells.findIndex(([cr, cc]) => cr === inCell[0] && cc === inCell[1])
         // S 板有 3 個口:線從進口進,可從「另外兩口」擇一出(一般板只有 1 個出口)
@@ -307,6 +319,18 @@ export function verify(result, bonus = [], opts = {}) {
     if (!isLast) {
       if (ids.length !== roundSize) return { ok: false, why: `第${gi + 1}輪沒用滿 ${roundSize} 片就換輪` }
       if (includeS && !ids.includes('S')) return { ok: false, why: `第${gi + 1}輪沒有包含 S 板` }
+    }
+  }
+  // 不壓板:整條路線都不能重疊 — 任何一格都不可被兩片佔到。
+  {
+    const seen = new Map() // cell -> 第幾片
+    const flat = result.groups.flatMap((g) => g.placed)
+    for (let i = 0; i < flat.length; i++) {
+      for (const [r, c] of flat[i].cells) {
+        const key1 = k(r, c)
+        if (seen.has(key1)) return { ok: false, why: `第${i + 1}片壓到第${seen.get(key1) + 1}片(不可重疊)` }
+        seen.set(key1, i)
+      }
     }
   }
   // 緩衝:同號兩次使用之間至少隔 buffer 片(S 板亦同)
