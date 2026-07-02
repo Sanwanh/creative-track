@@ -839,6 +839,33 @@ button {
 .start-overlay {
   z-index: 4;
 }
+/* 滑過策略路線某片 → 對應板子在地圖上高亮(看得到板子在哪、怎麼走) */
+.tile-overlay.is-highlight {
+  outline: 3px solid var(--primary);
+  outline-offset: -1px;
+  box-shadow:
+    0 0 0 3px var(--primary-soft),
+    0 4px 14px rgba(0, 0, 0, 0.28);
+  border-radius: 3px;
+}
+.tile-step {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 0 0 4px 0;
+  pointer-events: none;
+}
 .tile-ghost {
   pointer-events: none;
   opacity: 0.5;
@@ -1003,6 +1030,20 @@ button {
   border: 1px solid #fde4ab;
   font-size: 12px;
   letter-spacing: 0.3px;
+}
+.step.is-draggable {
+  cursor: grab;
+  touch-action: none;
+}
+.step.is-draggable:active {
+  cursor: grabbing;
+}
+/* 拖曳落點提示:在該片的左/右緣顯示一條主色插入線 */
+.step.drop-before {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.step.drop-after {
+  box-shadow: inset -3px 0 0 var(--primary);
 }
 
 /* ===== Tile tray ===== */

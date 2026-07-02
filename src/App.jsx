@@ -83,6 +83,7 @@ export default function App() {
   const [compareList, setCompareList] = useState([])
   const [comparing, setComparing] = useState(false)
   const [comparePicked, setComparePicked] = useState(null) // 目前在地圖上預覽的那一組 index
+  const [focusUid, setFocusUid] = useState(null) // 滑過/拖曳「策略路線」某片時,對應到地圖上要高亮的板子
 
   const handSet = useMemo(() => new Set(hand), [hand])
   // 緩衝:最近放下的板子暫時不能再用(正常 2 片;激進模式 1 片)
@@ -283,7 +284,8 @@ export default function App() {
         buffer: aggressive ? 1 : 2,
       })
       if (!result) {
-        setPlanMsg(`✗ 這手 ${hand.join('・')} 排不到終點(可能無解),請 🎰 重抽或再試一次`)
+        const hint = aggressive ? '請 🎰 重抽或再試一次' : '可改用地圖工具的「激進模式」再試,或 🎰 重抽'
+        setPlanMsg(`✗ 這手 ${hand.join('・')} 在不壓板下排不到終點,${hint}`)
         return
       }
       applyPlanResult(result, batch, cfg.includeS)
@@ -561,7 +563,7 @@ export default function App() {
   // 跟著埠走(同 verify 邏輯),壓板也算得對;接不上之後的片以備援顯示。
   const chain = useMemo(() => {
     if (!startPos) return { tokens: [], seams: [] }
-    const ordered = seq.map((e) => placed[e.uid]).filter(Boolean)
+    const ordered = seq.map((e) => (placed[e.uid] ? { uid: e.uid, ...placed[e.uid] } : null)).filter(Boolean)
     if (ordered.length === 0) return { tokens: [], seams: [] }
     const geom = ordered.map((p) => {
       const [rowLetter, col] = parseKey(p.origin)
@@ -592,7 +594,7 @@ export default function App() {
         if (oi < 0) break
       }
       const out = pl.ports[oi]
-      const tok = { id: p.id, vertical: p.rot % 180 === 0, batch: p.batch }
+      const tok = { id: p.id, uid: p.uid, vertical: p.rot % 180 === 0, batch: p.batch }
       if (p.id === 'S') {
         tok.sEntry = S_PORT_LABELS[pin]
         tok.sExit = S_PORT_LABELS[oi]
@@ -604,12 +606,21 @@ export default function App() {
     }
     for (; i < ordered.length; i++) {
       const p = ordered[i]
-      tokens.push({ id: p.id, vertical: p.rot % 180 === 0, batch: p.batch }) // 備援(無進出資訊)
+      tokens.push({ id: p.id, uid: p.uid, vertical: p.rot % 180 === 0, batch: p.batch }) // 備援(無進出資訊)
     }
     return { tokens, seams }
   }, [placed, seq, startPos])
 
   const groupSeams = chain.seams
+
+  // uid → 放置步序(第幾片),供地圖高亮時顯示步號
+  const stepByUid = useMemo(() => {
+    const m = {}
+    seq.forEach((e, i) => {
+      m[e.uid] = i + 1
+    })
+    return m
+  }, [seq])
 
   // 使用組合:照 batch 分組,輪與輪之間放分隔線
   const flowChips = useMemo(() => {
@@ -626,6 +637,30 @@ export default function App() {
     }
     return rounds
   }, [chain])
+
+  // 拖曳「策略路線」重排放置順序:把 fromUid 移到 toUid 前/後,並依新順序每 roundSize 片重新分組。
+  // 板子位置不動(只改先後順序),地圖分組紅槓與動畫依新順序更新。
+  function moveInSeq(fromUid, toUid, before) {
+    if (fromUid === toUid) return
+    const moving = seq.find((e) => e.uid === fromUid)
+    if (!moving) return
+    const rest = seq.filter((e) => e.uid !== fromUid)
+    let idx = rest.findIndex((e) => e.uid === toUid)
+    if (idx < 0) return
+    if (!before) idx += 1
+    const next = [...rest.slice(0, idx), moving, ...rest.slice(idx)]
+    const roundSize = (hand.length || 4) + (GROUPS[group].includeS ? 1 : 0)
+    stopAnim()
+    setSeq(next)
+    setPlaced((pv) => {
+      const np = { ...pv }
+      next.forEach((e, i) => {
+        if (np[e.uid]) np[e.uid] = { ...np[e.uid], batch: Math.floor(i / roundSize) }
+      })
+      return np
+    })
+    setPlanMsg('')
+  }
 
   // 動畫可見性:reveal=null → 全部顯示;否則 reveal 步 = 起點(步 1)+ 前 (reveal-1) 片
   const anim = useMemo(() => {
@@ -922,6 +957,8 @@ export default function App() {
             anim={anim}
             drag={drag}
             hoverCell={hoverCell}
+            highlightUid={focusUid}
+            stepByUid={stepByUid}
             onGridCellClick={handleGridCellClick}
             onGridDrop={handleGridDrop}
             onGridDragOver={onGridDragOver}
@@ -937,7 +974,7 @@ export default function App() {
           />
         </BoardMap>
 
-        <StrategySequence rounds={flowChips} />
+        <StrategySequence rounds={flowChips} onReorder={moveInSeq} onHover={setFocusUid} />
 
         <section className="tray">
           <div className="section-head">

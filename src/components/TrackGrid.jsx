@@ -18,6 +18,8 @@ export default function TrackGrid({
   anim,
   drag,
   hoverCell,
+  highlightUid,
+  stepByUid,
   onGridCellClick,
   onGridDrop,
   onGridDragOver,
@@ -144,20 +146,22 @@ export default function TrackGrid({
 
         {/* 已放置的軌道板(uid 為鍵;可壓板,後放的在上層) */}
         {Object.entries(placed).map(([uid, { origin, id, rot }], idx) => {
-          if (!tileVisible(uid)) return null // 動畫:還沒輪到就先不顯示
+          const isHi = uid === highlightUid
+          if (!tileVisible(uid) && !isHi) return null // 動畫:還沒輪到就先不顯示(高亮的一律顯示)
           const tile = TILE_BY_ID[id]
           const { ri, ci, horizontal } = footprint(origin, tile.h, rot)
           const rowSpan = horizontal ? 1 : tile.h
           const colSpan = horizontal ? tile.h : 1
+          const step = stepByUid ? stepByUid[uid] : null
           return (
             <div
               key={uid}
-              className="tile-overlay appear"
+              className={`tile-overlay appear ${isHi ? 'is-highlight' : ''}`}
               draggable
               style={{
                 gridColumn: `${FIRST_CELL_COL + ci} / span ${colSpan}`,
                 gridRow: `${ri + 2} / span ${rowSpan}`,
-                zIndex: 2 + idx,
+                zIndex: isHi ? 40 : 2 + idx,
               }}
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/plain', `move:track:${uid}`)
@@ -181,6 +185,7 @@ export default function TrackGrid({
               >
                 <Tile tile={tile} />
               </div>
+              {isHi && step != null && <span className="tile-step">{step}</span>}
             </div>
           )
         })}
