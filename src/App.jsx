@@ -109,10 +109,29 @@ export default function App() {
   )
 
   // 界內檢查(壓板合法,所以不檢查重疊)
-  function canPlace(originKey, id, r) {
+  // 碰撞框:回傳與 selfIndex 在放置順序上相距 <= 緩衝(2 片,激進 1 片)的「其他板子」佔格。
+  // 這些是「緩衝板」——還在場上沒被收走,不能疊上去;更早(相距 > 2)的板子才能疊(走回頭路)。
+  // selfIndex 用 seq.length 代表「即將新放的板子」(緩衝 = 最近 2 片)。
+  function bufferOccupied(selfIndex, ignoreUid) {
+    const bufN = aggressive ? 1 : 2
+    const set = new Set()
+    seq.forEach((e, j) => {
+      if (e.uid === ignoreUid || Math.abs(j - selfIndex) > bufN) return
+      const p = placed[e.uid]
+      if (!p) return
+      for (const { ri, ci } of footprint(p.origin, TILE_BY_ID[p.id].h, p.rot).cells) {
+        set.add(ri + ',' + ci)
+      }
+    })
+    return set
+  }
+  // 可放置 = 界內 + 不壓到緩衝板(最近 2 片)。可壓在相距 > 2 片的舊板子上。
+  function canPlace(originKey, id, r, selfIndex = seq.length, ignoreUid = null) {
     const { cells } = footprint(originKey, TILE_BY_ID[id].h, r)
+    const buf = bufferOccupied(selfIndex, ignoreUid)
     for (const { ri, ci } of cells) {
       if (ri < 0 || ri >= ROWS.length || ci < 0 || ci >= TOTAL_COLS) return false
+      if (buf.has(ri + ',' + ci)) return false // 疊到緩衝板 → 不可
     }
     return true
   }
@@ -165,21 +184,23 @@ export default function App() {
   }
 
   function rotateTrack(uid) {
+    const idx = seq.findIndex((e) => e.uid === uid)
     setPlaced((prev) => {
       const cur = prev[uid]
       if (!cur) return prev
       for (const delta of [90, 180, 270]) {
         const nr = (cur.rot + delta) % 360
-        if (canPlace(cur.origin, cur.id, nr)) return { ...prev, [uid]: { ...cur, rot: nr } }
+        if (canPlace(cur.origin, cur.id, nr, idx, uid)) return { ...prev, [uid]: { ...cur, rot: nr } }
       }
       return prev
     })
   }
 
   function moveTrack(uid, to) {
+    const idx = seq.findIndex((e) => e.uid === uid)
     setPlaced((prev) => {
       const cur = prev[uid]
-      if (!cur || !canPlace(to, cur.id, cur.rot)) return prev
+      if (!cur || !canPlace(to, cur.id, cur.rot, idx, uid)) return prev
       return { ...prev, [uid]: { ...cur, origin: to } }
     })
   }
@@ -285,7 +306,7 @@ export default function App() {
       })
       if (!result) {
         const hint = aggressive ? '請 🎰 重抽或再試一次' : '可改用地圖工具的「激進模式」再試,或 🎰 重抽'
-        setPlanMsg(`✗ 這手 ${hand.join('・')} 在不壓板下排不到終點,${hint}`)
+        setPlanMsg(`✗ 這手 ${hand.join('・')} 排不到終點,${hint}`)
         return
       }
       applyPlanResult(result, batch, cfg.includeS)
